@@ -3,6 +3,7 @@ import os
 import random
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
@@ -196,9 +197,6 @@ class _netG(nn.Module):
         self.Gtransform.bias.data[0] = opt.maxobjscale
         self.Gtransform.bias.data[4] = opt.maxobjscale
 
-        # define grid generator
-        self.Ggrid = AffineGridGen(nsize, nsize, aux_loss = False)
-
         # define compsitor
         self.Compositors = []
         for t in range(ntimestep - 1):
@@ -337,12 +335,8 @@ class _netG(nn.Module):
                 fgt = self.Gtransform(input4g) # Nx6
                 fgt_clamp = self.clampT(fgt)
                 fgt_view = fgt_clamp.contiguous().view(batchSize, 2, 3) # Nx2x3
-                fgg = self.Ggrid(fgt_view)
-                canvas4c = canvas.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(bg, 1, 2), 2, 3) #
-                fgi4c = fgi.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(fgi, 1, 2), 2, 3) #
-                fgm4c = fgm.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(fgm, 1, 2), 2, 3) #
-                temp = self.Compositors[i - 1](canvas4c, fgi4c, fgg, fgm4c)
-                canvas = temp.permute(0, 3, 1, 2).contiguous() # torch.transpose(torch.transpose(temp, 2, 3), 1, 2) #
+                fgg = F.affine_grid(fgt_view, canvas.shape)
+                canvas = self.Compositors[i - 1](canvas, fgi, fgg, fgm)
                 outputsT.append(canvas)
                 fgimgsT.append(fgi)
                 fgmaskT.append(fgm)
