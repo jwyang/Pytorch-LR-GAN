@@ -13,6 +13,7 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 from modules.stnm import STNM
 from modules.gridgen import AffineGridGen, CylinderGridGen, CylinderGridGenV2, DenseAffine3DGridGen, DenseAffine3DGridGen_rotate
+from bainmary_utils.torchvision_dataset_tools import Mnist3Dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, help='cifar10 | lsun | imagenet | folder | lfw ')
@@ -120,6 +121,21 @@ elif opt.dataset == 'mnist-two':
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     dataset = dset.ImageFolder('datasets/mnist-two/images', transform = trans)
+    checkfreq = 100
+    nc = 1
+    rot = 0.3
+elif opt.dataset == 'mnist-three':
+    trans = transforms.Compose([
+        transforms.ToPILImage('F'),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
+    train_dataset = Mnist3Dataset(opt.dataroot, train=True, transform=trans)
+    valid_dataset = Mnist3Dataset(opt.dataroot, valid=True, transform=trans)
+    test_dataset = Mnist3Dataset(opt.dataroot, test=True, transform=trans)
+    dataset = torch.utils.data.ConcatDataset(
+        [train_dataset, valid_dataset, test_dataset])
     checkfreq = 100
     nc = 1
     rot = 0.3
