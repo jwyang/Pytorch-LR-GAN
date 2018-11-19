@@ -70,6 +70,9 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
+    checkfreq = 100
+    nc = 3
+    rot = 0.1
 elif opt.dataset == 'lsun':
     dataset = dset.LSUN(db_path=opt.dataroot, classes=['bedroom_train'],
                         transform=transforms.Compose([
@@ -452,16 +455,19 @@ for epoch in range(opt.epoch_s, opt.niter):
               % (opt.session, epoch, opt.niter, i, len(dataloader),
                  errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
         if i % checkfreq == 0:
+            real_cpu = (real_cpu * 0.5) + 0.5
             vutils.save_image(real_cpu,
                     '%s/%s_real_samples.png' % (opt.outimgf, opt.dataset)) # normalize=True
             fake, fakeseq, fgimgseq, fgmaskseq = netG(fixed_noise)
             for t in range(ntimestep):
-                vutils.save_image(fakeseq[t].data,
+                img = (fakeseq[t].data * 0.5) + 0.5
+                vutils.save_image(img,
                         '%s/%s_fake_samples_s_%01d_t_%01d.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
                 if t > 0:
-                    vutils.save_image(fgimgseq[t - 1].data,
+                    img = (fgimgseq[t - 1].data * 0.5) + 0.5
+                    vutils.save_image(img,
                             '%s/%s_fake_samples_s_%01d_t_%01d_fgimg.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
-                    vutils.save_image(fgmaskseq[t - 1].data.sub_(0.5).div_(0.5),
+                    vutils.save_image(fgmaskseq[t - 1].data,
                             '%s/%s_fake_samples_s_%01d_t_%01d_fgmask.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
 
             if opt.evaluate:
