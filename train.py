@@ -65,7 +65,7 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
     # folder dataset
     dataset = dset.ImageFolder(root=opt.dataroot,
                                transform=transforms.Compose([
-                                   transforms.Scale(opt.imageSize),
+                                   transforms.Resize((opt.imageSize, opt.imageSize)),
                                    transforms.CenterCrop(opt.imageSize),
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -73,7 +73,7 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
 elif opt.dataset == 'lsun':
     dataset = dset.LSUN(db_path=opt.dataroot, classes=['bedroom_train'],
                         transform=transforms.Compose([
-                            transforms.Scale(opt.imageSize),
+                            transforms.Resize((opt.imageSize, opt.imageSize)),
                             transforms.CenterCrop(opt.imageSize),
                             transforms.ToTensor(),
                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -82,7 +82,7 @@ elif opt.dataset == 'lsun':
 elif opt.dataset == 'cifar10':
     dataset = dset.CIFAR10(root=opt.dataroot, download=True,
                            transform=transforms.Compose([
-                               transforms.Scale(opt.imageSize),
+                               transforms.Resize((opt.imageSize, opt.imageSize)),
                                transforms.ToTensor(),
                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                            ])
@@ -92,7 +92,7 @@ elif opt.dataset == 'cifar10':
     rot = 0.1
 elif opt.dataset == 'cub200':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -102,7 +102,7 @@ elif opt.dataset == 'cub200':
     rot = 0.1
 elif opt.dataset == 'mnist-one':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -112,7 +112,7 @@ elif opt.dataset == 'mnist-one':
     rot = 0.3
 elif opt.dataset == 'mnist-two':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -417,7 +417,7 @@ for epoch in range(opt.epoch_s, opt.niter):
         if opt.dataset == 'mnist-one' or opt.dataset == 'mnist-two':
             real_cpu = torch.mean(real_cpu, 1)
         input.resize_as_(real_cpu).copy_(real_cpu)
-        label.resize_(batch_size).fill_(real_label)
+        label.resize_(batch_size, 1).fill_(real_label)
         inputv = Variable(input)
         labelv = Variable(label)
         output = netD(inputv)
@@ -450,7 +450,7 @@ for epoch in range(opt.epoch_s, opt.niter):
 
         print('[%d][%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
               % (opt.session, epoch, opt.niter, i, len(dataloader),
-                 errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
+                 errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
         if i % checkfreq == 0:
             vutils.save_image(real_cpu,
                     '%s/%s_real_samples.png' % (opt.outimgf, opt.dataset)) # normalize=True
