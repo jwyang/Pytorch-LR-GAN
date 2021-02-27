@@ -3,6 +3,7 @@ import os
 import random
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
@@ -13,6 +14,7 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 from modules.stnm import STNM
 from modules.gridgen import AffineGridGen, CylinderGridGen, CylinderGridGenV2, DenseAffine3DGridGen, DenseAffine3DGridGen_rotate
+from bainmary_utils.torchvision_dataset_tools import Mnist3Dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, help='cifar10 | lsun | imagenet | folder | lfw ')
@@ -65,15 +67,18 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
     # folder dataset
     dataset = dset.ImageFolder(root=opt.dataroot,
                                transform=transforms.Compose([
-                                   transforms.Scale(opt.imageSize),
+                                   transforms.Resize((opt.imageSize, opt.imageSize)),
                                    transforms.CenterCrop(opt.imageSize),
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
+    checkfreq = 100
+    nc = 3
+    rot = 0.1
 elif opt.dataset == 'lsun':
     dataset = dset.LSUN(db_path=opt.dataroot, classes=['bedroom_train'],
                         transform=transforms.Compose([
-                            transforms.Scale(opt.imageSize),
+                            transforms.Resize((opt.imageSize, opt.imageSize)),
                             transforms.CenterCrop(opt.imageSize),
                             transforms.ToTensor(),
                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -82,7 +87,7 @@ elif opt.dataset == 'lsun':
 elif opt.dataset == 'cifar10':
     dataset = dset.CIFAR10(root=opt.dataroot, download=True,
                            transform=transforms.Compose([
-                               transforms.Scale(opt.imageSize),
+                               transforms.Resize((opt.imageSize, opt.imageSize)),
                                transforms.ToTensor(),
                                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                            ])
@@ -92,7 +97,7 @@ elif opt.dataset == 'cifar10':
     rot = 0.1
 elif opt.dataset == 'cub200':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -102,7 +107,7 @@ elif opt.dataset == 'cub200':
     rot = 0.1
 elif opt.dataset == 'mnist-one':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
@@ -112,11 +117,26 @@ elif opt.dataset == 'mnist-one':
     rot = 0.3
 elif opt.dataset == 'mnist-two':
     trans = transforms.Compose([
-        transforms.Scale(opt.imageSize),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     dataset = dset.ImageFolder('datasets/mnist-two/images', transform = trans)
+    checkfreq = 100
+    nc = 1
+    rot = 0.3
+elif opt.dataset == 'mnist-three':
+    trans = transforms.Compose([
+        transforms.ToPILImage('F'),
+        transforms.Resize((opt.imageSize, opt.imageSize)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
+    train_dataset = Mnist3Dataset(opt.dataroot, train=True, transform=trans)
+    valid_dataset = Mnist3Dataset(opt.dataroot, valid=True, transform=trans)
+    test_dataset = Mnist3Dataset(opt.dataroot, test=True, transform=trans)
+    dataset = torch.utils.data.ConcatDataset(
+        [train_dataset, valid_dataset, test_dataset])
     checkfreq = 100
     nc = 1
     rot = 0.3
@@ -176,9 +196,6 @@ class _netG(nn.Module):
         self.Gtransform.bias.data.zero_()
         self.Gtransform.bias.data[0] = opt.maxobjscale
         self.Gtransform.bias.data[4] = opt.maxobjscale
-
-        # define grid generator
-        self.Ggrid = AffineGridGen(nsize, nsize, aux_loss = False)
 
         # define compsitor
         self.Compositors = []
@@ -318,12 +335,8 @@ class _netG(nn.Module):
                 fgt = self.Gtransform(input4g) # Nx6
                 fgt_clamp = self.clampT(fgt)
                 fgt_view = fgt_clamp.contiguous().view(batchSize, 2, 3) # Nx2x3
-                fgg = self.Ggrid(fgt_view)
-                canvas4c = canvas.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(bg, 1, 2), 2, 3) #
-                fgi4c = fgi.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(fgi, 1, 2), 2, 3) #
-                fgm4c = fgm.permute(0, 2, 3, 1).contiguous() # torch.transpose(torch.transpose(fgm, 1, 2), 2, 3) #
-                temp = self.Compositors[i - 1](canvas4c, fgi4c, fgg, fgm4c)
-                canvas = temp.permute(0, 3, 1, 2).contiguous() # torch.transpose(torch.transpose(temp, 2, 3), 1, 2) #
+                fgg = F.affine_grid(fgt_view, canvas.shape)
+                canvas = self.Compositors[i - 1](canvas, fgi, fgg, fgm)
                 outputsT.append(canvas)
                 fgimgsT.append(fgi)
                 fgmaskT.append(fgm)
@@ -417,7 +430,7 @@ for epoch in range(opt.epoch_s, opt.niter):
         if opt.dataset == 'mnist-one' or opt.dataset == 'mnist-two':
             real_cpu = torch.mean(real_cpu, 1)
         input.resize_as_(real_cpu).copy_(real_cpu)
-        label.resize_(batch_size).fill_(real_label)
+        label.resize_(batch_size, 1).fill_(real_label)
         inputv = Variable(input)
         labelv = Variable(label)
         output = netD(inputv)
@@ -450,18 +463,21 @@ for epoch in range(opt.epoch_s, opt.niter):
 
         print('[%d][%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
               % (opt.session, epoch, opt.niter, i, len(dataloader),
-                 errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
+                 errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
         if i % checkfreq == 0:
+            real_cpu = (real_cpu * 0.5) + 0.5
             vutils.save_image(real_cpu,
                     '%s/%s_real_samples.png' % (opt.outimgf, opt.dataset)) # normalize=True
             fake, fakeseq, fgimgseq, fgmaskseq = netG(fixed_noise)
             for t in range(ntimestep):
-                vutils.save_image(fakeseq[t].data,
+                img = (fakeseq[t].data * 0.5) + 0.5
+                vutils.save_image(img,
                         '%s/%s_fake_samples_s_%01d_t_%01d.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
                 if t > 0:
-                    vutils.save_image(fgimgseq[t - 1].data,
+                    img = (fgimgseq[t - 1].data * 0.5) + 0.5
+                    vutils.save_image(img,
                             '%s/%s_fake_samples_s_%01d_t_%01d_fgimg.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
-                    vutils.save_image(fgmaskseq[t - 1].data.sub_(0.5).div_(0.5),
+                    vutils.save_image(fgmaskseq[t - 1].data,
                             '%s/%s_fake_samples_s_%01d_t_%01d_fgmask.png' % (opt.outimgf, opt.dataset, opt.session, t)) # normalize=True
 
             if opt.evaluate:
